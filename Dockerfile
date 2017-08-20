@@ -3,17 +3,19 @@ FROM alpine:3.6
 LABEL maintainer1="Adam <adam@anope.org>" \
       maintainer2="Sheogorath <sheogorath@shivering-isles.com>"
 
+ARG REPOSITORY=https://github.com/inspircd/inspircd.git
 ARG VERSION=insp20
 ARG CONFIGUREARGS=
 ARG EXTRASMODULES=
 ARG RUN_DEPENDENCIES=
 ARG BUILD_DEPENDENCIES=
 
-COPY modules /src/modules
+# mimics an empty modules directory. replaces the command: COPY modules /src/modules
+RUN mkdir -p /src/modules && touch /src/modules/.stay
 
 RUN apk add --no-cache --virtual .build-utils gcc g++ make git pkgconfig perl \
        perl-net-ssleay perl-crypt-ssleay perl-lwp-protocol-https \
-       perl-libwww wget gnutls-dev $BUILD_DEPENDENCIES && \
+       perl-libwww wget gnutls-dev git $BUILD_DEPENDENCIES && \
     # Install all permanent packages as long-therm dependencies
     apk add --no-cache --virtual .dependencies libgcc libstdc++ gnutls gnutls-utils $RUN_DEPENDENCIES && \
     # Create a user to run inspircd later
@@ -21,10 +23,8 @@ RUN apk add --no-cache --virtual .build-utils gcc g++ make git pkgconfig perl \
     mkdir -p /src /conf && \
     cd /src && \
     # Clone the requested version
-    git clone https://github.com/inspircd/inspircd.git inspircd --depth 1 -b $VERSION && \
+    git clone $REPOSITORY inspircd --depth 1 -b $VERSION && \
     cd /src/inspircd && \
-    # Add and overwrite modules
-    { [ $(ls /src/modules/ | wc -l) -gt 0 ] && cp -r /src/modules/* /src/inspircd/src/modules/ || echo "No modules overwritten/added by repository"; } && \
     # write a little script to handle empty extra modules
     echo $EXTRASMODULES | xargs --no-run-if-empty ./modulemanager install && \ 
     # Enable GNUtls with SHA256 fingerprints
@@ -34,22 +34,33 @@ RUN apk add --no-cache --virtual .build-utils gcc g++ make git pkgconfig perl \
     # Run build multi-threaded
     make -j`getconf _NPROCESSORS_ONLN` && \
     make install && \
-    # Uninstall all unnecessary tools after build process
-    apk del .build-utils && \
     # Keep example configs as good reference for users
     cp -r /inspircd/conf/examples/ /conf && \
-    rm -rf /src && \
     rm -rf /inspircd/conf && \
-    ln -s /dev/stdout /inspircd/logs/ircd.log && \
+    ln -s /dev/stdout /inspircd/logs/ircd.log
+
+# install modules after compiling, for the sake of speed
+COPY modules /src/modules
+RUN if ls /src/modules | grep -q '.tmp$'; then rm /src/modules/*.tmp; fi
+
+    # Add and overwrite modules
+RUN { [ $(ls /src/modules/ | wc -l) -gt 0 ] && cp -r /src/modules/* /src/inspircd/src/modules/ || echo "No modules overwritten/added by repository"; } && \
+    cd /src/inspircd && \
+    { echo "$VERSION" | grep '^[^0-9]*1' && ./configure -modupdate || true; } && \
+    make && \
+    { echo "$VERSION" | grep -q '^[^0-9]*1' && mv -f /src/inspircd/src/modules/* /inspircd/modules || make install; } && \
     # Make sure the application is allowed to write to it's own direcotry for 
     # logging and generation of certificates
     chown -R inspircd /inspircd/ && \
-    chown -R inspircd /conf/
+    chown -R inspircd /conf/ && \
+    # Uninstall all unnecessary tools after build process
+    apk del .build-utils && \
+    rm -rf /src
 
 # Copy the config after the build enables us to use the caching layer as base 
 # instead of rebuild the whole image when you only changed a few lines in the 
 # config or the entrypoing script.
-COPY conf /conf
+COPY conf-private /conf
 COPY entrypoint.sh /inspircd/
 
 # Create a volume in case you want to keep your configs using docker volumes.
