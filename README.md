@@ -1,4 +1,4 @@
-USAGE:
+# Usage
 
 Type './irc' to initialize the repository and start the server. Note that only 
 the first build will be slow -- succeeding builds will be much faster.
@@ -11,8 +11,7 @@ directory, then run './irc refresh modules'. This will restart the server.
 To apply any changes made in the conf-private or conf-public directories, run 
 './irc refresh conf'. This will also restart the server.
 
-NOTES:
+# Notes
 
 Some configuration options are available for the ./irc program. They're in the 
 first few lines of that program. Open it in a text editor to change them.
-
